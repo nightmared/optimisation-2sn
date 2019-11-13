@@ -40,7 +40,7 @@ trait Ast<T> {
 }
 
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 enum AstDiff<T> {
     Mul(OwnedAst<T>, OwnedAst<T>),
     Add(OwnedAst<T>, OwnedAst<T>),
@@ -48,7 +48,7 @@ enum AstDiff<T> {
     Constant(T)
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct OwnedAst<T> (Arc<Box<AstDiff<T>>>);
 
 impl<T> OwnedAst<T> {
@@ -104,31 +104,41 @@ impl Ast<f64> for OwnedAst<f64> {
         Ok(OwnedAst::new(self.0.derivative(var)?))
     }
 }
-/*
-impl OwnedAst<f64> {
-    fn simplify<'a>(&'a self) -> Result<Arc<Box<AstDiff<f64>>>, AstError<'a, f64>> {
-        Ok(match **self.0 {
 
-            AstDiff::Mul(a, b) => {
+impl OwnedAst<f64> {
+    fn simplify<'a>(&'a self) -> Result<OwnedAst<f64>, AstError<'a, f64>> {
+        Ok(match **self.0 {
+            AstDiff::Add(ref a, ref b) => {
                 let a = a.simplify()?;
                 let b = b.simplify()?;
-                if AstDiff::Constant(0.) == a || AstDiff::Constant(0.) == b {
-                    AstDiff::Constant(0.)
-                } else if let AstDiff::Constant(1.) = a  {
+                if AstDiff::Constant(0.) == **a.0  {
                     b
-                } else if let AstDiff::Constant(1.) = b  {
+                } else if AstDiff::Constant(0.) == **b.0  {
                     a
                 } else {
-                    AstDiff::Mul(a, b)
+                    OwnedAst::new(AstDiff::Add(a, b))
                 }
             }
-            AstDiff::Var(v) => AstDiff::Var(v.clone()),
-            AstDiff::Constant(c) => AstDiff::Constant(*c)
+            AstDiff::Mul(ref a, ref b) => {
+                let a = a.simplify()?;
+                let b = b.simplify()?;
+                if AstDiff::Constant(0.) == **a.0 || AstDiff::Constant(0.) == **b.0 {
+                    OwnedAst::new(AstDiff::Constant(0.))
+                } else if AstDiff::Constant(1.) == **a.0  {
+                    b
+                } else if AstDiff::Constant(1.) == **b.0  {
+                    a
+                } else {
+                    OwnedAst::new(AstDiff::Mul(a, b))
+                }
+            },
+            AstDiff::Var(_) => self.clone(),
+            AstDiff::Constant(_) => self.clone()
         })
     }
 }
 
-*/
+
 trait Fun<T, M, N> {
     fn eval(&self, datas: &Array<T, N>) -> Array<T, M>;
 }
@@ -252,7 +262,7 @@ mod tests {
             ident: 1,
             _ghost: PhantomData
         };
-        let ast_test = AstDiff::Mul(OwnedAst::new(AstDiff::Constant(-4.)), OwnedAst::new(AstDiff::Add(OwnedAst::new(AstDiff::Var(pl.clone())), OwnedAst::new(AstDiff::Constant(0.2)))));
+        let ast_test = OwnedAst::new(AstDiff::Mul(OwnedAst::new(AstDiff::Constant(-4.)), OwnedAst::new(AstDiff::Add(OwnedAst::new(AstDiff::Var(pl.clone())), OwnedAst::new(AstDiff::Constant(0.2))))));
         assert!((-4.8 - ast_test.eval(&vec![(&pl, 1.0)]).unwrap()).abs() < EPSILON);
         assert!((-0.8 - ast_test.eval(&vec![(&pl, 0.0)]).unwrap()).abs() < EPSILON);
         assert!((19.2 - ast_test.eval(&vec![(&pl, -5.0)]).unwrap()).abs() < EPSILON);
@@ -266,7 +276,9 @@ mod tests {
         };
         assert!(AstDiff::Constant(-4.).derivative(&pl.clone()).unwrap() == AstDiff::Constant(0.));
         assert!(AstDiff::Var(pl.clone()).derivative(&pl.clone()).unwrap() == AstDiff::Constant(1.));
-        let ast_test = AstDiff::Mul(OwnedAst::new(AstDiff::Constant(-4.)), OwnedAst::new(AstDiff::Add(OwnedAst::new(AstDiff::Var(pl.clone())), OwnedAst::new(AstDiff::Constant(0.2)))));
-        //assert!(ast_test.derivative(&pl.clone()).unwrap() == );
+        let ast_test_1var = OwnedAst::new(AstDiff::Mul(OwnedAst::new(AstDiff::Constant(-4.)), OwnedAst::new(AstDiff::Add(OwnedAst::new(AstDiff::Var(pl.clone())), OwnedAst::new(AstDiff::Constant(0.2))))));
+        assert!(ast_test_1var.derivative(&pl.clone()).unwrap().simplify().unwrap() == OwnedAst::new(AstDiff::Constant(-4.)));
+        let ast_test_2var = OwnedAst::new(AstDiff::Mul(OwnedAst::new(AstDiff::Var(pl.clone())), OwnedAst::new(AstDiff::Add(OwnedAst::new(AstDiff::Var(pl.clone())), OwnedAst::new(AstDiff::Constant(0.2))))));
+        assert!(ast_test_2var.derivative(&pl.clone()).unwrap().simplify().unwrap() == OwnedAst::new(AstDiff::Add(OwnedAst::new(AstDiff::Add(OwnedAst::new(AstDiff::Var(pl.clone())), OwnedAst::new(AstDiff::Constant(0.2)))), OwnedAst::new(AstDiff::Var(pl.clone())))));
     }
 }
