@@ -5,14 +5,20 @@ use ndarray::prelude::*;
 use ndarray_linalg::Solve;
 
 use std::marker::PhantomData;
-use std::ops::{Add, Mul};
 use std::sync::Arc;
 use std::fmt::{Display, Formatter};
+use std::collections::HashSet;
 
 #[derive(Debug)]
 struct Placeholder<T> {
     ident: u32,
     _ghost: PhantomData<T>
+}
+
+impl<T> std::hash::Hash for Placeholder<T> {
+    fn hash<H: std::hash::Hasher>(&self, hasher: &mut H) {
+        self.ident.hash(hasher);
+    }
 }
 
 impl<T: Display> Display for Placeholder<T> {
@@ -36,6 +42,8 @@ impl<T> PartialEq for Placeholder<T> {
     }
 }
 
+impl<T> Eq for Placeholder<T> {}
+
 #[derive(Debug)]
 enum AstError<'a, T> {
     UnavailableVariable(&'a Placeholder<T>)
@@ -44,6 +52,7 @@ enum AstError<'a, T> {
 trait Ast<T> {
     fn eval(&self, vars: &Vec<(&Placeholder<T>, f64)>) -> Result<T, AstError<T>>;
     fn derivative(&self, var: &Placeholder<T>) -> Result<Self, AstError<T>> where Self: Sized;
+    fn get_vars(&self) -> HashSet<Placeholder<T>>;
 }
 
 
@@ -118,6 +127,22 @@ impl Ast<f64> for AstDiff<f64> {
             }
         }
     }
+    fn get_vars(&self) -> HashSet<Placeholder<f64>> {
+        match self {
+            AstDiff::Constant(_) => HashSet::new(),
+            AstDiff::Var(v) => {
+                let mut set = HashSet::new();
+                set.insert(v.clone());
+                set
+            },
+            AstDiff::Add(a, b) => {
+                a.get_vars().union(&b.get_vars()).into_iter().map(|x| x.clone()).collect()
+            },
+            AstDiff::Mul(a, b) => {
+                a.get_vars().union(&b.get_vars()).into_iter().map(|x| x.clone()).collect()
+            }
+        }
+    }
 }
 
 impl Ast<f64> for OwnedAst<f64> {
@@ -126,6 +151,9 @@ impl Ast<f64> for OwnedAst<f64> {
     }
     fn derivative(&self, var: &Placeholder<f64>) -> Result<OwnedAst<f64>, AstError<f64>> {
         Ok(OwnedAst::new(self.0.derivative(var)?))
+    }
+    fn get_vars(&self) -> HashSet<Placeholder<f64>> {
+        self.0.get_vars()
     }
 }
 
