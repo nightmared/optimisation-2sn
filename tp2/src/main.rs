@@ -7,11 +7,18 @@ use ndarray_linalg::Solve;
 use std::marker::PhantomData;
 use std::ops::{Add, Mul};
 use std::sync::Arc;
+use std::fmt::{Display, Formatter};
 
 #[derive(Debug)]
 struct Placeholder<T> {
     ident: u32,
     _ghost: PhantomData<T>
+}
+
+impl<T: Display> Display for Placeholder<T> {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        Ok(write!(f, "x_{}", self.ident)?)
+    }
 }
 
 impl<T> std::clone::Clone for Placeholder<T> {
@@ -48,8 +55,25 @@ enum AstDiff<T> {
     Constant(T)
 }
 
+impl<T: Display> Display for AstDiff<T> {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        Ok(match self {
+            AstDiff::Constant(c) => write!(f, "{}", c)?,
+            AstDiff::Var(v) => write!(f, "{}", v)?,
+            AstDiff::Mul(a, b) => write!(f, "({}*{})", a, b)?,
+            AstDiff::Add(a, b) => write!(f, "({}+{})", a, b)?
+        })
+    }
+}
+
 #[derive(Clone, Debug)]
 struct OwnedAst<T> (Arc<Box<AstDiff<T>>>);
+
+impl<T: Display> Display for OwnedAst<T> {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        Ok(write!(f, "{}", **self.0)?)
+    }
+}
 
 impl<T> OwnedAst<T> {
     fn new(val: AstDiff<T>) -> Self {
@@ -274,11 +298,23 @@ mod tests {
             ident: 1,
             _ghost: PhantomData
         };
+        let pl2 = Placeholder {
+            ident: 2,
+            _ghost: PhantomData
+        };
         assert!(AstDiff::Constant(-4.).derivative(&pl.clone()).unwrap() == AstDiff::Constant(0.));
         assert!(AstDiff::Var(pl.clone()).derivative(&pl.clone()).unwrap() == AstDiff::Constant(1.));
-        let ast_test_1var = OwnedAst::new(AstDiff::Mul(OwnedAst::new(AstDiff::Constant(-4.)), OwnedAst::new(AstDiff::Add(OwnedAst::new(AstDiff::Var(pl.clone())), OwnedAst::new(AstDiff::Constant(0.2))))));
-        assert!(ast_test_1var.derivative(&pl.clone()).unwrap().simplify().unwrap() == OwnedAst::new(AstDiff::Constant(-4.)));
-        let ast_test_2var = OwnedAst::new(AstDiff::Mul(OwnedAst::new(AstDiff::Var(pl.clone())), OwnedAst::new(AstDiff::Add(OwnedAst::new(AstDiff::Var(pl.clone())), OwnedAst::new(AstDiff::Constant(0.2))))));
-        assert!(ast_test_2var.derivative(&pl.clone()).unwrap().simplify().unwrap() == OwnedAst::new(AstDiff::Add(OwnedAst::new(AstDiff::Add(OwnedAst::new(AstDiff::Var(pl.clone())), OwnedAst::new(AstDiff::Constant(0.2)))), OwnedAst::new(AstDiff::Var(pl.clone())))));
+
+        let ast_test_1_var = OwnedAst::new(AstDiff::Mul(OwnedAst::new(AstDiff::Constant(-4.)), OwnedAst::new(AstDiff::Add(OwnedAst::new(AstDiff::Var(pl.clone())), OwnedAst::new(AstDiff::Constant(0.2))))));
+        assert!(ast_test_1_var.derivative(&pl.clone()).unwrap().simplify().unwrap() == OwnedAst::new(AstDiff::Constant(-4.)));
+
+        // (x_1*(x_1+0.2)) -> ((x_1+0.2)+x_1)
+        let ast_test_2_id_var = OwnedAst::new(AstDiff::Mul(OwnedAst::new(AstDiff::Var(pl.clone())), OwnedAst::new(AstDiff::Add(OwnedAst::new(AstDiff::Var(pl.clone())), OwnedAst::new(AstDiff::Constant(0.2))))));
+        assert!(ast_test_2_id_var.derivative(&pl.clone()).unwrap().simplify().unwrap() == OwnedAst::new(AstDiff::Add(OwnedAst::new(AstDiff::Add(OwnedAst::new(AstDiff::Var(pl.clone())), OwnedAst::new(AstDiff::Constant(0.2)))), OwnedAst::new(AstDiff::Var(pl.clone())))));
+
+        // (x_1*(x_2+0.2)) -> (x_2+0.2) and x_1
+        let ast_test_2_var = OwnedAst::new(AstDiff::Mul(OwnedAst::new(AstDiff::Var(pl.clone())), OwnedAst::new(AstDiff::Add(OwnedAst::new(AstDiff::Var(pl2.clone())), OwnedAst::new(AstDiff::Constant(0.2))))));
+        assert!(ast_test_2_var.derivative(&pl.clone()).unwrap().simplify().unwrap() == OwnedAst::new(AstDiff::Add(OwnedAst::new(AstDiff::Var(pl2.clone())), OwnedAst::new(AstDiff::Constant(0.2)))));
+        assert!(ast_test_2_var.derivative(&pl2.clone()).unwrap().simplify().unwrap() == OwnedAst::new(AstDiff::Var(pl.clone())));
     }
 }
