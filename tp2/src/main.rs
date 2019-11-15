@@ -9,6 +9,8 @@ use std::sync::Arc;
 use std::fmt::{Display, Formatter};
 use std::collections::HashSet;
 
+mod parser;
+
 #[derive(Debug)]
 struct Placeholder<T> {
     ident: u32,
@@ -210,6 +212,29 @@ impl OwnedAst<f64> {
 }
 
 
+
+macro_rules! owned_ast {
+    //[ $e1:tt + $e2:tt ] => {
+    //    OwnedAst::new(AstDiff::Add(owned_ast!($e1), owned_ast!($e2)))
+    //};
+    [ ($e1:expr) + ($e2:expr) ] => {
+        OwnedAst::new(AstDiff::Add($e1, $e2))
+    };
+    //[ $e1:tt * $e2:tt ] => {
+    //    OwnedAst::new(AstDiff::Mul(owned_ast!($e1), owned_ast!($e2)))
+    //};
+    [ ($e1:expr) * ($e2:expr) ] => {
+        OwnedAst::new(AstDiff::Mul($e1, $e2))
+    };
+    [ var{$i:ident} ] => {
+        OwnedAst::new(AstDiff::Var($i.clone()))
+    };
+    [ $x:expr ] => {
+        OwnedAst::new(AstDiff::Constant($x))
+    };
+}
+
+
 trait Fun<T, M, N> {
     fn eval(&self, data: &Array<T, N>) -> Result<Array<OwnedAst<T>, M>, AstError<T>>;
     //fn grad(&self) -> Result<Gradient<T, M, N>, AstError<T>>;
@@ -366,11 +391,11 @@ mod tests {
 
     #[test]
     fn eval() {
-        assert!((5. - AstDiff::Add(OwnedAst::new(AstDiff::Constant(2.)), OwnedAst::new(AstDiff::Constant(3.))).eval(&vec![]).unwrap()).abs() < EPSILON);
-        assert!((0.3 - AstDiff::Add(OwnedAst::new(AstDiff::Constant(0.1)), OwnedAst::new(AstDiff::Constant(0.2))).eval(&vec![]).unwrap()).abs() < EPSILON);
-        assert!((0.02 - AstDiff::Mul(OwnedAst::new(AstDiff::Constant(0.1)), OwnedAst::new(AstDiff::Constant(0.2))).eval(&vec![]).unwrap()).abs() < EPSILON);
+        assert!((5. - owned_ast![2. + 3.].eval(&vec![]).unwrap()).abs() < EPSILON);
+        assert!((0.3 - owned_ast![0.1 + 0.2].eval(&vec![]).unwrap()).abs() < EPSILON);
+        assert!((0.02 - owned_ast![0.1 * 0.2].eval(&vec![]).unwrap()).abs() < EPSILON);
 
-        let ast_test = OwnedAst::new(AstDiff::Mul(OwnedAst::new(AstDiff::Constant(-4.)), OwnedAst::new(AstDiff::Add(OwnedAst::new(AstDiff::Var(pl.clone())), OwnedAst::new(AstDiff::Constant(0.2))))));
+        let ast_test = owned_ast![(owned_ast![-4.]) * (owned_ast![(owned_ast![var{pl}]) + (owned_ast![0.2])])];
         assert!((-4.8 - ast_test.eval(&vec![(&pl, 1.0)]).unwrap()).abs() < EPSILON);
         assert!((-0.8 - ast_test.eval(&vec![(&pl, 0.0)]).unwrap()).abs() < EPSILON);
         assert!((19.2 - ast_test.eval(&vec![(&pl, -5.0)]).unwrap()).abs() < EPSILON);
@@ -381,7 +406,7 @@ mod tests {
         assert!(AstDiff::Constant(-4.).derivative(&pl.clone()).unwrap() == AstDiff::Constant(0.));
         assert!(AstDiff::Var(pl.clone()).derivative(&pl.clone()).unwrap() == AstDiff::Constant(1.));
 
-        let ast_test_1_var = OwnedAst::new(AstDiff::Mul(OwnedAst::new(AstDiff::Constant(-4.)), OwnedAst::new(AstDiff::Add(OwnedAst::new(AstDiff::Var(pl.clone())), OwnedAst::new(AstDiff::Constant(0.2))))));
+        let ast_test_1_var = owned_ast![(owned_ast![-4.]) * (owned_ast![(owned_ast![var{pl}]) + (owned_ast![0.2])])];
         assert!(ast_test_1_var.derivative(&pl.clone()).unwrap().simplify().unwrap() == OwnedAst::new(AstDiff::Constant(-4.)));
 
         // (x_1*(x_1+0.2)) -> ((x_1+0.2)+x_1)
