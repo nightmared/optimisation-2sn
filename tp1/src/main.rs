@@ -1,4 +1,4 @@
-use ndarray::{Array, Array1, Array2, ArrayBase};
+use ndarray::{Array1, Array2};
 use ndarray_linalg::Norm;
 
 use ndarray::prelude::*;
@@ -16,7 +16,7 @@ enum ExitCondition {
 #[derive(Debug, Default)]
 struct AlgoParams {
     epsilon: f64,
-    kMax: usize,
+    k_max: usize,
     delta_0: f64,
     delta_max: f64,
     gamma_1: f64,
@@ -36,7 +36,7 @@ fn newton(_f: &dyn Fn(&Array1<f64>) -> f64, x0: &Array1<f64>, gradient: &dyn Fn(
         k += 1;
 
         dk = hessienne(&xk).solve_into(-gradient(&xk)).unwrap();
-        if k == params.kMax {
+        if k == params.k_max {
             return (xk, ExitCondition::MaxIterationReached);
         } else if gradient(&xk).norm()/(gradient(x0).norm()+1e-8) < params.epsilon {
             return (xk, ExitCondition::NullGradient);
@@ -74,7 +74,7 @@ fn regions_confiance(f: &dyn Fn(&Array1<f64>) -> f64, x0: &Array1<f64>, gradient
     loop {
         sk = pas_de_cauchy(&gradient(&x0), &hessienne(&x0), delta_k, params.epsilon);
 
-        if k == params.kMax {
+        if k == params.k_max {
             return (xk, ExitCondition::MaxIterationReached);
         } else if gradient(&xk).norm()/(gradient(x0).norm()+1e-8) < params.epsilon {
             return (xk, ExitCondition::NullGradient);
@@ -114,7 +114,7 @@ fn gradient_f1(x: &Array1<f64>) -> Array1<f64> {
     ]
 }
 
-fn hessienne_f1(x: &Array1<f64>) -> Array2<f64> {
+fn hessienne_f1(_x: &Array1<f64>) -> Array2<f64> {
     array![
         [6., 2., 4.],
         [2., 8., 2.],
@@ -154,7 +154,7 @@ mod tests {
 
     const PARAMS: AlgoParams = AlgoParams {
         epsilon: EPSILON,
-        kMax: 500,
+        k_max: 500,
         delta_0: 5e-4,
         delta_max: 0.2,
         gamma_1: 0.4,
@@ -163,7 +163,7 @@ mod tests {
         eta_2: 0.5
     };
 
-    fn test_annexe_A1<M>(method: M, f: &dyn Fn(&Array1<f64>) -> f64, g: &dyn Fn(&Array1<f64>) -> Array1<f64>, h: &dyn Fn(&Array1<f64>) -> Array2<f64>)
+    fn test_annexe_a1<M>(method: M, f: &dyn Fn(&Array1<f64>) -> f64, g: &dyn Fn(&Array1<f64>) -> Array1<f64>, h: &dyn Fn(&Array1<f64>) -> Array2<f64>)
     where M: Fn(&dyn Fn(&Array1<f64>) -> f64, &Array1<f64>, &dyn Fn(&Array1<f64>) -> Array1<f64>, &dyn Fn(&Array1<f64>) -> Array2<f64>, &AlgoParams) -> (Array1<f64>, ExitCondition) {
         let x011 = array![1., 0., 0.];
         let x012 = array![10., 3., -2.2];
@@ -174,7 +174,7 @@ mod tests {
     }
 
 
-    fn test_annexe_A2<M>(method: M, f: &dyn Fn(&Array1<f64>) -> f64, g: &dyn Fn(&Array1<f64>) -> Array1<f64>, h: &dyn Fn(&Array1<f64>) -> Array2<f64>)
+    fn test_annexe_a2<M>(method: M, f: &dyn Fn(&Array1<f64>) -> f64, g: &dyn Fn(&Array1<f64>) -> Array1<f64>, h: &dyn Fn(&Array1<f64>) -> Array2<f64>)
      where M: Fn(&dyn Fn(&Array1<f64>) -> f64, &Array1<f64>, &dyn Fn(&Array1<f64>) -> Array1<f64>, &dyn Fn(&Array1<f64>) -> Array2<f64>, &AlgoParams) -> (Array1<f64>, ExitCondition) {
         let x021 = array![-1.2, 1.];
         let x022 = array![10., 0.];
@@ -189,31 +189,31 @@ mod tests {
 
     #[test]
     fn newton() {
-        test_annexe_A1(&super::newton, &f1, &gradient_f1, &hessienne_f1);
-        test_annexe_A2(&super::newton, &f2, &gradient_f2, &hessienne_f2);
+        test_annexe_a1(&super::newton, &f1, &gradient_f1, &hessienne_f1);
+        test_annexe_a2(&super::newton, &f2, &gradient_f2, &hessienne_f2);
     }
 
     #[test]
     fn pas_de_cauchy() {
         let pas_cauchy_exemple1_g = array![0., 0.];
-        let pas_cauchy_exemple1_H = array![[7., 0.], [0., 0.2]];
+        let pas_cauchy_exemple1_h = array![[7., 0.], [0., 0.2]];
         let res1 = array![0., 0.];
-        assert!((super::pas_de_cauchy(&pas_cauchy_exemple1_g, &pas_cauchy_exemple1_H, 0.5, EPSILON) - &res1).norm() < EPSILON);
+        assert!((super::pas_de_cauchy(&pas_cauchy_exemple1_g, &pas_cauchy_exemple1_h, 0.5, EPSILON) - &res1).norm() < EPSILON);
 
         let pas_cauchy_exemple2_g = array![6., 2.];
-        let pas_cauchy_exemple2_H = &pas_cauchy_exemple1_H;
+        let pas_cauchy_exemple2_h = &pas_cauchy_exemple1_h;
         let res2 = -0.5/f64::sqrt(40.)*&pas_cauchy_exemple2_g;
-        assert!((super::pas_de_cauchy(&pas_cauchy_exemple2_g, &pas_cauchy_exemple2_H, 0.5, EPSILON) - &res2).norm() < EPSILON);
+        assert!((super::pas_de_cauchy(&pas_cauchy_exemple2_g, &pas_cauchy_exemple2_h, 0.5, EPSILON) - &res2).norm() < EPSILON);
 
         let pas_cauchy_exemple3_g = array![-2., 1.];
-        let pas_cauchy_exemple3_H = array![[-2., 0.], [0., 10.]];
+        let pas_cauchy_exemple3_h = array![[-2., 0.], [0., 10.]];
         let res3 = -0.5/f64::sqrt(5.)*&pas_cauchy_exemple3_g;
-        assert!((super::pas_de_cauchy(&pas_cauchy_exemple3_g, &pas_cauchy_exemple3_H, 0.5, EPSILON) - &res3).norm() < EPSILON);
+        assert!((super::pas_de_cauchy(&pas_cauchy_exemple3_g, &pas_cauchy_exemple3_h, 0.5, EPSILON) - &res3).norm() < EPSILON);
     }
 
     #[test]
     fn regions_confiance() {
-        test_annexe_A1(&super::regions_confiance, &f1, &gradient_f1, &hessienne_f1);
-        test_annexe_A2(&super::regions_confiance, &f2, &gradient_f2, &hessienne_f2);
+        test_annexe_a1(&super::regions_confiance, &f1, &gradient_f1, &hessienne_f1);
+        test_annexe_a2(&super::regions_confiance, &f2, &gradient_f2, &hessienne_f2);
     }
 }
