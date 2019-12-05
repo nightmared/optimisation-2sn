@@ -13,13 +13,20 @@ enum ExitCondition {
     FixedPoint
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct AlgoParams {
     epsilon: f64,
-    kMax: usize
+    kMax: usize,
+    delta_0: f64,
+    delta_max: f64,
+    gamma_1: f64,
+    gamma_2: f64,
+    eta_1: f64,
+    eta_2: f64
 }
 
-fn newton(gradient: impl Fn(&Array1<f64>) -> Array1<f64>, hessienne: impl Fn(&Array1<f64>) -> Array2<f64>, x0: &Array1<f64>, params: &AlgoParams) -> (Array1<f64>, ExitCondition) {
+// _f is only there to maintin a compatible interface with other methos and thus simplify tests
+fn newton(_f: &dyn Fn(&Array1<f64>) -> f64, x0: &Array1<f64>, gradient: &dyn Fn(&Array1<f64>) -> Array1<f64>, hessienne: &dyn Fn(&Array1<f64>) -> Array2<f64>, params: &AlgoParams) -> (Array1<f64>, ExitCondition) {
     let mut xk = x0.clone();
     let mut dk = hessienne(&xk).solve_into(-gradient(&xk)).unwrap();
 
@@ -57,9 +64,9 @@ fn pas_de_cauchy(gk: &Array1<f64>, hk: &Array2<f64>, delta_k: f64, epsilon: f64)
 }
 
 
-fn regions_confiance(f: impl Fn(&Array1<f64>) -> f64, x0: &Array1<f64>, gradient: impl Fn(&Array1<f64>) -> Array1<f64>, hessienne: impl Fn(&Array1<f64>) -> Array2<f64>, delta_0: f64, delta_max: f64, gamma_1: f64, gamma_2: f64, eta_1: f64, eta_2: f64, params: &AlgoParams) -> (Array1<f64>, ExitCondition) {
+fn regions_confiance(f: &dyn Fn(&Array1<f64>) -> f64, x0: &Array1<f64>, gradient: &dyn Fn(&Array1<f64>) -> Array1<f64>, hessienne: &dyn Fn(&Array1<f64>) -> Array2<f64>, params: &AlgoParams) -> (Array1<f64>, ExitCondition) {
     let mut xk = x0.clone();
-    let mut delta_k = delta_0;
+    let mut delta_k = params.delta_0;
     let mut sk: Array1<f64>;
     let mut rho_k;
 
@@ -76,23 +83,27 @@ fn regions_confiance(f: impl Fn(&Array1<f64>) -> f64, x0: &Array1<f64>, gradient
         }
 
         rho_k = -(f(&xk) -f(&(&xk + &sk)))/(&gradient(&xk).t().dot(&sk)+&sk.t().dot(&hessienne(&xk).dot(&sk))/2.);
-        delta_k = if rho_k > eta_1 {
+        delta_k = if rho_k > params.eta_1 {
             xk = &xk + &sk;
-            if rho_k >= eta_2 {
-                f64::min(gamma_2 * delta_k, delta_max)
+            if rho_k >= params.eta_2 {
+                f64::min(params.gamma_2 * delta_k, params.delta_max)
             } else {
                 delta_k
             }
         } else {
-            gamma_1 * delta_k
+            params.gamma_1 * delta_k
         };
 
         k = k+1;
     }
 }
 
-fn f1(x1: f64, x2: f64, x3: f64) -> f64 {
-    2.*(x1+x2+x3-3.).powi(2)+(x1-x2).powi(2)+(x2-x3).powi(2)
+//fn f1(x1: f64, x2: f64, x3: f64) -> f64 {
+//    2.*(x1+x2+x3-3.).powi(2)+(x1-x2).powi(2)+(x2-x3).powi(2)
+//}
+
+fn f1(x: &Array1<f64>) -> f64 {
+    2.*(x[0]+x[1]+x[2]-3.).powi(2)+(x[0]-x[1]).powi(2)+(x[1]-x[2]).powi(2)
 }
 
 fn gradient_f1(x: &Array1<f64>) -> Array1<f64> {
@@ -111,13 +122,13 @@ fn hessienne_f1(x: &Array1<f64>) -> Array2<f64> {
     ]
 }
 
-fn f2(x1: f64, x2: f64) -> f64 {
-    100.*(x2-x1.powi(2)).powi(2)+(1.-x1).powi(2)
-}
-
-//fn f2_array(x: &Array1<f64>) -> f64 {
-//    100.*(x[1]-x[0].powi(2)).powi(2)+(1.-x[0]).powi(2)
+//fn f2(x1: f64, x2: f64) -> f64 {
+//    100.*(x2-x1.powi(2)).powi(2)+(1.-x1).powi(2)
 //}
+
+fn f2(x: &Array1<f64>) -> f64 {
+    100.*(x[1]-x[0].powi(2)).powi(2)+(1.-x[0]).powi(2)
+}
 
 fn gradient_f2(x: &Array1<f64>) -> Array1<f64> {
     array![
@@ -134,10 +145,6 @@ fn hessienne_f2(x: &Array1<f64>) -> Array2<f64> {
 }
 
 fn main() {
-    let params = AlgoParams {
-        epsilon: 0e-12,
-        kMax: 499
-    };
 
 }
 
@@ -147,25 +154,43 @@ mod tests {
 
     const PARAMS: AlgoParams = AlgoParams {
         epsilon: EPSILON,
-        kMax: 500
+        kMax: 500,
+        delta_0: 5e-4,
+        delta_max: 0.2,
+        gamma_1: 0.4,
+        gamma_2: 1.2,
+        eta_1: 0.2,
+        eta_2: 0.5
     };
 
-    #[test]
-    fn newton() {
+    fn test_annexe_A1<M>(method: M, f: &dyn Fn(&Array1<f64>) -> f64, g: &dyn Fn(&Array1<f64>) -> Array1<f64>, h: &dyn Fn(&Array1<f64>) -> Array2<f64>)
+    where M: Fn(&dyn Fn(&Array1<f64>) -> f64, &Array1<f64>, &dyn Fn(&Array1<f64>) -> Array1<f64>, &dyn Fn(&Array1<f64>) -> Array2<f64>, &AlgoParams) -> (Array1<f64>, ExitCondition) {
         let x011 = array![1., 0., 0.];
         let x012 = array![10., 3., -2.2];
         let res1 = array![1., 1., 1.];
-        assert!((super::newton(gradient_f1, hessienne_f1, &x011, &PARAMS).0 - &res1).norm() < EPSILON);
-        assert!((super::newton(gradient_f1, hessienne_f1, &x012, &PARAMS).0 - &res1).norm() < EPSILON);
+        assert!((method(&f, &x011, &g, &h, &PARAMS).0 - &res1).norm() < EPSILON);
+        assert!((method(&f, &x012, &g, &h, &PARAMS).0 - &res1).norm() < EPSILON);
 
+    }
+
+
+    fn test_annexe_A2<M>(method: M, f: &dyn Fn(&Array1<f64>) -> f64, g: &dyn Fn(&Array1<f64>) -> Array1<f64>, h: &dyn Fn(&Array1<f64>) -> Array2<f64>)
+     where M: Fn(&dyn Fn(&Array1<f64>) -> f64, &Array1<f64>, &dyn Fn(&Array1<f64>) -> Array1<f64>, &dyn Fn(&Array1<f64>) -> Array2<f64>, &AlgoParams) -> (Array1<f64>, ExitCondition) {
         let x021 = array![-1.2, 1.];
         let x022 = array![10., 0.];
         let x023 = array![0., 1./200.+1e-12];
         let res2 = array![0.24695456499523236, 0.060986557171984444];
         // la précision est plus faible pour ces calculs
-        assert!((super::newton(gradient_f2, hessienne_f2, &x021, &PARAMS).0 - &res2).norm() < 1e-6);
-        assert!((super::newton(gradient_f2, hessienne_f2, &x022, &PARAMS).0 - &res2).norm() < 1e-6);
-        assert!((super::newton(gradient_f2, hessienne_f2, &x023, &PARAMS).0 - &res2).norm() < 1e-6);
+        assert!((method(&f, &x021, &g, &h, &PARAMS).0 - &res2).norm() < 1e-6);
+        assert!((method(&f, &x022, &g, &h, &PARAMS).0 - &res2).norm() < 1e-6);
+        assert!((method(&f, &x023, &g, &h, &PARAMS).0 - &res2).norm() < 1e-6);
+
+    }
+
+    #[test]
+    fn newton() {
+        test_annexe_A1(&super::newton, &f1, &gradient_f1, &hessienne_f1);
+        test_annexe_A2(&super::newton, &f2, &gradient_f2, &hessienne_f2);
     }
 
     #[test]
@@ -188,6 +213,7 @@ mod tests {
 
     #[test]
     fn regions_confiance() {
-
+        test_annexe_A1(&super::regions_confiance, &f1, &gradient_f1, &hessienne_f1);
+        test_annexe_A2(&super::regions_confiance, &f2, &gradient_f2, &hessienne_f2);
     }
 }
