@@ -15,16 +15,23 @@ enum ExitState {
 #[derive(Debug)]
 struct ExitCondition(ExitState, usize);
 
-#[derive(Debug, Default)]
+#[derive(Copy, Clone, Debug, Default)]
 struct AlgoParams {
+    // paramètres généraux
     epsilon: f64,
+    epsilon_algo_regions_confiance: f64,
     k_max: usize,
+    // pour les régions de confiance
     delta_0: f64,
     delta_max: f64,
     gamma_1: f64,
     gamma_2: f64,
     eta_1: f64,
-    eta_2: f64
+    eta_2: f64,
+    // pour le lagrangien
+    tau: f64,
+    alpha: f64,
+    beta: f64
 }
 
 // _f is only there to maintain a compatible interface with other methods and thus simplify tests
@@ -79,7 +86,7 @@ fn regions_confiance<C>(methode: &C, f: &dyn Fn(&Array1<f64>) -> f64, x0: &Array
     let mut k = 0;
     let mut fk = f(&xk);
     loop {
-        sk = methode(&gradient(&xk), &hessienne(&xk), delta_k, params.epsilon);
+        sk = methode(&gradient(&xk), &hessienne(&xk), delta_k, params.epsilon_algo_regions_confiance);
 
         let xk_plus_1 = &xk + &sk;
         let fk_plus_1 = f(&xk_plus_1);
@@ -199,6 +206,66 @@ fn regions_confiance_conjuge_tronque(f: &dyn Fn(&Array1<f64>) -> f64, x0: &Array
     regions_confiance(&conjuge_tronque, f, x0, gradient, hessienne, params)
 }
 
+fn methode_lagrangien_egalite<C>(methode: &C, f: &dyn Fn(&Array1<f64>) -> f64, gradient: &dyn Fn(&Array1<f64>) -> Array1<f64>, hessienne: &dyn Fn(&Array1<f64>) -> Array2<f64>, contraintes: &dyn Fn(&Array1<f64>) -> Array1<f64>, gradient_contraintes: &dyn Fn(&Array1<f64>) -> Array2<f64>, grad_grad_contraintes: &dyn Fn(&Array1<f64>) -> Array3<f64>, x0: &Array1<f64>, lambda_0: &Array1<f64>, eta_0: f64, mu_0: f64, params: &AlgoParams) -> (Array1<f64>, Array1<f64>, f64)
+    where C: Fn(&dyn Fn(&Array1<f64>) -> f64, &Array1<f64>, &dyn Fn(&Array1<f64>) -> Array1<f64>, &dyn Fn(&Array1<f64>) -> Array2<f64>, &AlgoParams) -> (Array1<f64>, ExitCondition) {
+    let original_espilon = params.epsilon;
+    let mut params = *params;
+    let mut lambda_k: Array1<f64> = lambda_0.to_owned();
+    let mut epsilon_k = 1./mu_0;
+    let mut mu_k = mu_0;
+    let mut eta_k = eta_0;
+    let mut eta_0_ref = eta_0*mu_0.powf(params.alpha);
+    let mut xk = x0.to_owned();
+    let mut k = 0;
+
+    loop {
+        let CLHessC = |x: &Array1<f64>, beta: &Array1<f64>| {
+            let grad_grad_contraintes_x = grad_grad_contraintes(x);
+            let (dim0, dim1, dim2) = grad_grad_contraintes_x.dim();
+            let mut res: Array2<f64> = Array2::zeros((dim1, dim2));
+            for i in 0..dim0 {
+                res = res+beta[i]*&grad_grad_contraintes_x.slice(s![i, 1..-1, 1..-1]);
+            }
+            res
+        };
+        let Lk = |x: &Array1<f64>| {
+            let contraintes_x = contraintes(x);
+            f(x) + &lambda_k.t().dot(&contraintes_x) + 0.5*mu_k*contraintes_x.norm().powi(2)
+        };
+        let GLk = |x: &Array1<f64>| {
+            gradient(x) + gradient_contraintes(x).dot(&(&lambda_k+&(mu_k*contraintes(x))))
+        };
+        let HLk = |x: &Array1<f64>| {
+            let gradient_contraintes_x = gradient_contraintes(x);
+            hessienne(x) + &(mu_k*gradient_contraintes_x.dot(&gradient_contraintes_x.t()))+CLHessC(x, &(&lambda_k+&(mu_k*contraintes(x))))
+        };
+
+        params.epsilon = epsilon_k;
+        let xk_plus_1 = methode(&Lk, &xk, &GLk, &HLk, &params).0;
+
+        if k == params.k_max
+            || (&xk_plus_1-&xk).norm() < original_espilon * (xk.norm()+1e-8)
+            || (f(&xk_plus_1)-f(&xk)).abs() < original_espilon * (f(&xk).abs()+1e-8) {
+            break;
+        }
+
+
+        let ncontraintes = contraintes(&xk_plus_1);
+        if ncontraintes.norm() < eta_k {
+            lambda_k = lambda_k + mu_k * ncontraintes;
+            epsilon_k = epsilon_k/mu_k;
+            eta_k = eta_k/mu_k.powf(params.beta);
+        } else {
+            mu_k = params.tau * mu_k;
+            epsilon_k = 1./(mu_0*mu_k);
+            eta_k = eta_0_ref/mu_k.powf(params.alpha);
+        }
+        k += 1;
+    }
+    (xk, lambda_k, mu_k)
+}
+
+
 fn f1(x: &Array1<f64>) -> f64 {
     2.*(x[0]+x[1]+x[2]-3.).powi(2)+(x[0]-x[1]).powi(2)+(x[1]-x[2]).powi(2)
 }
@@ -247,13 +314,17 @@ mod tests {
 
     const PARAMS: AlgoParams = AlgoParams {
         epsilon: 1e-8,
+        epsilon_algo_regions_confiance: 1e-8,
         k_max: 5000,
         delta_0: 1.0,
         delta_max: 1e8,
         gamma_1: 0.5,
         gamma_2: 2.0,
         eta_1: 0.1,
-        eta_2: 0.5
+        eta_2: 0.5,
+        tau: 0.75,
+        alpha: 0.1,
+        beta: 0.9
     };
 
     #[test]
@@ -370,5 +441,10 @@ mod tests {
         assert!((super::newton(&f2, &x022, &gradient_f2, &hessienne_f2, &PARAMS).0 - &res).norm() < 1e-3);
         // diverge avec cet algorithme
         //assert!((super::newton(&f2, &x023, &gradient_f2, &hessienne_f2, &PARAMS).0 - &res).norm() < 1e-3);
+    }
+
+    #[test]
+    fn lagrangien_egalite() {
+
     }
 }
