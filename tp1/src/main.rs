@@ -256,91 +256,119 @@ mod tests {
         eta_2: 0.5
     };
 
-    fn test_annexe_a1<M>(method: M, f: &dyn Fn(&Array1<f64>) -> f64, g: &dyn Fn(&Array1<f64>) -> Array1<f64>, h: &dyn Fn(&Array1<f64>) -> Array2<f64>, eps: f64, params: &AlgoParams)
-    where M: Fn(&dyn Fn(&Array1<f64>) -> f64, &Array1<f64>, &dyn Fn(&Array1<f64>) -> Array1<f64>, &dyn Fn(&Array1<f64>) -> Array2<f64>, &AlgoParams) -> (Array1<f64>, ExitCondition) {
+    #[test]
+    fn newton() {
+        // annexe a1
         let x011 = array![1., 0., 0.];
         let x012 = array![10., 3., -2.2];
         let res = array![1., 1., 1.];
-        assert!((method(&f, &x011, &g, &h, params).0 - &res).norm() < eps);
-        assert!((method(&f, &x012, &g, &h, params).0 - &res).norm() < eps);
-    }
+        assert!((super::newton(&f1, &x011, &gradient_f1, &hessienne_f1, &PARAMS).0 - &res).norm() < 1e-12);
+        assert!((super::newton(&f1, &x012, &gradient_f1, &hessienne_f1, &PARAMS).0 - &res).norm() < 1e-12);
 
-
-    fn test_annexe_a2<M>(method: M, f: &dyn Fn(&Array1<f64>) -> f64, g: &dyn Fn(&Array1<f64>) -> Array1<f64>, h: &dyn Fn(&Array1<f64>) -> Array2<f64>, eps: f64, params: &AlgoParams)
-     where M: Fn(&dyn Fn(&Array1<f64>) -> f64, &Array1<f64>, &dyn Fn(&Array1<f64>) -> Array1<f64>, &dyn Fn(&Array1<f64>) -> Array2<f64>, &AlgoParams) -> (Array1<f64>, ExitCondition) {
+        // annexe a2
+        // la précision est plus faible pour ces calculs
         let x021 = array![-1.2, 1.];
         let x022 = array![10., 0.];
         //let x023 = array![0., 1./200.+1e-12];
         let res = array![1.0, 1.0];
-        //assert!((method(&f, &x021, &g, &h, params).0 - &res).norm() < eps);
-        assert!((method(&f, &x022, &g, &h, params).0 - &res).norm() < eps);
-        //assert!((method(&f, &x023, &g, &h, &params).0 - &res).norm() < eps);
+        assert!((super::newton(&f2, &x021, &gradient_f2, &hessienne_f2, &PARAMS).0 - &res).norm() < 1e-10);
+        assert!((super::newton(&f2, &x022, &gradient_f2, &hessienne_f2, &PARAMS).0 - &res).norm() < 1e-3);
+        // diverge avec cet algorithme
+        //assert!((super::newton(&f2, &x023, &gradient_f2, &hessienne_f2, &PARAMS).0 - &res).norm() < 1e-3);
     }
 
     #[test]
-    fn newton() {
-        test_annexe_a1(&super::newton, &f1, &gradient_f1, &hessienne_f1, 1e-6, &PARAMS);
-        // la précision est plus faible pour ces calculs
-        test_annexe_a2(&super::newton, &f2, &gradient_f2, &hessienne_f2, 1e-2, &PARAMS);
-    }
-
-    fn test_annexe_b<M>(method: M) where M: Fn(&Array1<f64>, &Array2<f64>, f64, f64) -> Array1<f64> {
+    fn pas_de_cauchy() {
+        // annexe B
         let exemple1_g = array![0., 0.];
         let exemple1_h = array![[7., 0.], [0., 0.2]];
         let res1 = array![0., 0.];
-        assert!((method(&exemple1_g, &exemple1_h, 0.5, 1e-14) - &res1).norm() < PARAMS.epsilon);
+        assert!((super::pas_de_cauchy(&exemple1_g, &exemple1_h, 0.5, 1e-14) - &res1).norm() < PARAMS.epsilon);
 
         let exemple2_g = array![6., 2.];
         let exemple2_h = &exemple1_h;
         let res2 = -0.5/f64::sqrt(40.)*&exemple2_g;
-        assert!((method(&exemple2_g, &exemple2_h, 0.5, 1e-14) - &res2).norm() < PARAMS.epsilon);
+        assert!((super::pas_de_cauchy(&exemple2_g, &exemple2_h, 0.5, 1e-14) - &res2).norm() < PARAMS.epsilon);
 
         let exemple3_g = array![-2., 1.];
         let exemple3_h = array![[-2., 0.], [0., 10.]];
         let res3 = -0.5/f64::sqrt(5.)*&exemple3_g;
-        assert!((method(&exemple3_g, &exemple3_h, 0.5, 1e-14) - &res3).norm() < PARAMS.epsilon);
-    }
-
-    fn test_annexe_c<M>(method: M) where M: Fn(&Array1<f64>, &Array2<f64>, f64, f64) -> Array1<f64> {
-        let exemple1_g = array![0., 0.];
-        let exemple1_h = array![[-2., 0.], [0., 10.0]];
-        let res1 = array![0., 0.];
-        assert!((method(&exemple1_g, &exemple1_h, 0.5, 1e-14) - &res1).norm() < PARAMS.epsilon);
-
-        let exemple2_g = array![2., 3.];
-        let exemple2_h = array![[4., 6.], [6., 5.0]];
-        let res2 = -0.5/f64::sqrt(40.)*&exemple2_g;
-        //assert!((method(&exemple2_g, &exemple2_h, 0.5, 1e-14) - &res2).norm() < PARAMS.epsilon);
-
-        let exemple3_g = array![2., 0.];
-        let exemple3_h = array![[4., 0.], [0., -15.]];
-        let res3 = -0.5/f64::sqrt(5.)*&exemple3_g;
-        //assert!((method(&exemple3_g, &exemple3_h, 0.5, 1e-14) - &res3).norm() < PARAMS.epsilon);
-    }
-
-
-    #[test]
-    fn pas_de_cauchy() {
-        test_annexe_b(super::pas_de_cauchy);
+        assert!((super::pas_de_cauchy(&exemple3_g, &exemple3_h, 0.5, 1e-14) - &res3).norm() < PARAMS.epsilon);
     }
 
     #[test]
     fn conjuge_tronque() {
-        test_annexe_b(super::conjuge_tronque);
-        test_annexe_c(super::conjuge_tronque);
+        // annexe B
+        let exemple1_g = array![0., 0.];
+        let exemple1_h = array![[7., 0.], [0., 0.2]];
+        let res1 = array![0., 0.];
+        assert!((super::conjuge_tronque(&exemple1_g, &exemple1_h, 0.5, 1e-14) - &res1).norm() < PARAMS.epsilon);
+
+        let exemple2_g = array![6., 2.];
+        let exemple2_h = &exemple1_h;
+        let res2 = -0.5/f64::sqrt(40.)*&exemple2_g;
+        assert!((super::conjuge_tronque(&exemple2_g, &exemple2_h, 0.5, 1e-14) - &res2).norm() < PARAMS.epsilon);
+
+        let exemple3_g = array![-2., 1.];
+        let exemple3_h = array![[-2., 0.], [0., 10.]];
+        let res3 = -0.5/f64::sqrt(5.)*&exemple3_g;
+        assert!((super::conjuge_tronque(&exemple3_g, &exemple3_h, 0.5, 1e-14) - &res3).norm() < PARAMS.epsilon);
+
+        // annexe C
+        let exemple1_g = array![0., 0.];
+        let exemple1_h = array![[-2., 0.], [0., 10.0]];
+        let res1 = array![0., 0.];
+        assert!((super::conjuge_tronque(&exemple1_g, &exemple1_h, 0.5, 1e-14) - &res1).norm() < PARAMS.epsilon);
+
+        //let exemple2_g = array![2., 3.];
+        //let exemple2_h = array![[4., 6.], [6., 5.0]];
+        //let res2 = TODO;
+        //println!("{:?}", (super::conjuge_tronque(&exemple2_g, &exemple2_h, 0.5, 1e-14) - &res2));
+        //assert!((super::conjuge_tronque(&exemple2_g, &exemple2_h, 0.5, 1e-14) - &res2).norm() < PARAMS.epsilon);
+
+        //let exemple3_g = array![2., 0.];
+        //let exemple3_h = array![[4., 0.], [0., -15.]];
+        //let res3 = TODO;
+        //assert!((super::conjuge_tronque(&exemple3_g, &exemple3_h, 0.5, 1e-14) - &res3).norm() < PARAMS.epsilon);
     }
 
     #[test]
     fn regions_confiance_pas_de_cauchy() {
-        let mut params = PARAMS;
-        params.epsilon = 1e-4;
-        test_annexe_a1(&super::regions_confiance_pas_de_cauchy, &f1, &gradient_f1, &hessienne_f1, 1e-2, &params);
-        test_annexe_a2(&super::regions_confiance_pas_de_cauchy, &f2, &gradient_f2, &hessienne_f2, 0.2, &params);
+        // annexe a1
+        let x011 = array![1., 0., 0.];
+        let x012 = array![10., 3., -2.2];
+        let res = array![1., 1., 1.];
+        assert!((super::newton(&f1, &x011, &gradient_f1, &hessienne_f1, &PARAMS).0 - &res).norm() < 1e-12);
+        assert!((super::newton(&f1, &x012, &gradient_f1, &hessienne_f1, &PARAMS).0 - &res).norm() < 1e-12);
+
+        // annexe a2
+        let x021 = array![-1.2, 1.];
+        let x022 = array![10., 0.];
+        //let x023 = array![0., 1./200.+1e-12];
+        let res = array![1.0, 1.0];
+        assert!((super::newton(&f2, &x021, &gradient_f2, &hessienne_f2, &PARAMS).0 - &res).norm() < 1e-10);
+        assert!((super::newton(&f2, &x022, &gradient_f2, &hessienne_f2, &PARAMS).0 - &res).norm() < 1e-3);
+        // diverge avec cet algorithme
+        //assert!((super::newton(&f2, &x023, &gradient_f2, &hessienne_f2, &PARAMS).0 - &res).norm() < 1e-3);
     }
 
     #[test]
     fn regions_confiance_conjuge_tronque() {
-        test_annexe_a1(&super::regions_confiance_conjuge_tronque, &f1, &gradient_f1, &hessienne_f1, 1e-10, &PARAMS);
-        test_annexe_a2(&super::regions_confiance_conjuge_tronque, &f2, &gradient_f2, &hessienne_f2, 1e-3, &PARAMS);
+        // annexe a1
+        let x011 = array![1., 0., 0.];
+        let x012 = array![10., 3., -2.2];
+        let res = array![1., 1., 1.];
+        assert!((super::newton(&f1, &x011, &gradient_f1, &hessienne_f1, &PARAMS).0 - &res).norm() < 1e-12);
+        assert!((super::newton(&f1, &x012, &gradient_f1, &hessienne_f1, &PARAMS).0 - &res).norm() < 1e-12);
+
+        // annexe a2
+        let x021 = array![-1.2, 1.];
+        let x022 = array![10., 0.];
+        //let x023 = array![0., 1./200.+1e-12];
+        let res = array![1.0, 1.0];
+        assert!((super::newton(&f2, &x021, &gradient_f2, &hessienne_f2, &PARAMS).0 - &res).norm() < 1e-10);
+        assert!((super::newton(&f2, &x022, &gradient_f2, &hessienne_f2, &PARAMS).0 - &res).norm() < 1e-3);
+        // diverge avec cet algorithme
+        //assert!((super::newton(&f2, &x023, &gradient_f2, &hessienne_f2, &PARAMS).0 - &res).norm() < 1e-3);
     }
 }
