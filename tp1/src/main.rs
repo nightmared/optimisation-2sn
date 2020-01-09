@@ -4,38 +4,50 @@ use ndarray_linalg::Norm;
 use ndarray::prelude::*;
 use ndarray_linalg::Solve;
 
+/// Raison de sortie de l'algorithme
 #[derive(Debug)]
-enum ExitState {
+pub enum ExitState {
+    /// Le nombre maximal d'itérations a été atteint
     MaxIterationReached,
+    /// La gradient de la fonction est nulle
     NullGradient,
+    /// Le résultat obtenu n'évolue plus
     FixedPoint,
+    /// f(x+1)-f(x) n'évolue plus
     FunStable
 }
 
+/// Résultat en sortie des algorithmes
 #[derive(Debug)]
-struct ExitCondition(ExitState, usize);
+pub struct ExitCondition(ExitState, usize);
 
+/// Paramètres des algorithmes
 #[derive(Copy, Clone, Debug, Default)]
-struct AlgoParams {
+pub struct AlgoParams {
     // paramètres généraux
-    epsilon: f64,
-    epsilon_algo_regions_confiance: f64,
-    k_max: usize,
+    /// précision générale
+    pub epsilon: f64,
+    /// précision pour l'algorithme des régions de confiance
+    pub epsilon_algo_regions_confiance: f64,
+    /// précision pour l'algorithme du lagrangien augmenté
+    pub epsilon_algo_lagrangien: f64,
+    /// nombre maximal d'itérations
+    pub k_max: usize,
     // pour les régions de confiance
-    delta_0: f64,
-    delta_max: f64,
-    gamma_1: f64,
-    gamma_2: f64,
-    eta_1: f64,
-    eta_2: f64,
+    pub delta_0: f64,
+    pub delta_max: f64,
+    pub gamma_1: f64,
+    pub gamma_2: f64,
+    pub eta_1: f64,
+    pub eta_2: f64,
     // pour le lagrangien
-    tau: f64,
-    alpha: f64,
-    beta: f64
+    pub tau: f64,
+    pub alpha: f64,
+    pub beta: f64
 }
 
-// _f is only there to maintain a compatible interface with other methods and thus simplify tests
-fn newton(f: &dyn Fn(&Array1<f64>) -> f64, x0: &Array1<f64>, gradient: &dyn Fn(&Array1<f64>) -> Array1<f64>, hessienne: &dyn Fn(&Array1<f64>) -> Array2<f64>, params: &AlgoParams) -> (Array1<f64>, ExitCondition) {
+/// Algorithme de newton
+pub fn newton(f: &dyn Fn(&Array1<f64>) -> f64, x0: &Array1<f64>, gradient: &dyn Fn(&Array1<f64>) -> Array1<f64>, hessienne: &dyn Fn(&Array1<f64>) -> Array2<f64>, params: &AlgoParams) -> (Array1<f64>, ExitCondition) {
     let mut xk = x0.clone();
     let mut dk = -hessienne(&xk).solve_into(gradient(&xk)).unwrap();
 
@@ -60,7 +72,8 @@ fn newton(f: &dyn Fn(&Array1<f64>) -> f64, x0: &Array1<f64>, gradient: &dyn Fn(&
     }
 }
 
-fn pas_de_cauchy(gk: &Array1<f64>, hk: &Array2<f64>, delta_k: f64, epsilon: f64) -> Array1<f64> {
+/// Algorithme du pas de cauchy
+pub fn pas_de_cauchy(gk: &Array1<f64>, hk: &Array2<f64>, delta_k: f64, epsilon: f64) -> Array1<f64> {
     if gk.norm() == 0. {
         return Array1::zeros(gk.len());
     }
@@ -77,7 +90,8 @@ fn pas_de_cauchy(gk: &Array1<f64>, hk: &Array2<f64>, delta_k: f64, epsilon: f64)
 }
 
 
-fn regions_confiance<C>(methode: &C, f: &dyn Fn(&Array1<f64>) -> f64, x0: &Array1<f64>, gradient: &dyn Fn(&Array1<f64>) -> Array1<f64>, hessienne: &dyn Fn(&Array1<f64>) -> Array2<f64>, params: &AlgoParams) -> (Array1<f64>, ExitCondition)
+/// Algorithme des régions de confiance
+pub fn regions_confiance<C>(methode: &C, f: &dyn Fn(&Array1<f64>) -> f64, x0: &Array1<f64>, gradient: &dyn Fn(&Array1<f64>) -> Array1<f64>, hessienne: &dyn Fn(&Array1<f64>) -> Array2<f64>, params: &AlgoParams) -> (Array1<f64>, ExitCondition)
     where C: Fn(&Array1<f64>, &Array2<f64>, f64, f64) -> Array1<f64> {
     let mut xk = x0.clone();
     let mut delta_k = params.delta_0;
@@ -122,12 +136,13 @@ fn regions_confiance<C>(methode: &C, f: &dyn Fn(&Array1<f64>) -> f64, x0: &Array
     }
 }
 
-fn regions_confiance_pas_de_cauchy(f: &dyn Fn(&Array1<f64>) -> f64, x0: &Array1<f64>, gradient: &dyn Fn(&Array1<f64>) -> Array1<f64>, hessienne: &dyn Fn(&Array1<f64>) -> Array2<f64>, params: &AlgoParams) -> (Array1<f64>, ExitCondition) {
+/// Régions de confiance avec le pas de cauchy
+pub fn regions_confiance_pas_de_cauchy(f: &dyn Fn(&Array1<f64>) -> f64, x0: &Array1<f64>, gradient: &dyn Fn(&Array1<f64>) -> Array1<f64>, hessienne: &dyn Fn(&Array1<f64>) -> Array2<f64>, params: &AlgoParams) -> (Array1<f64>, ExitCondition) {
     regions_confiance(&pas_de_cauchy, f, x0, gradient, hessienne, params)
 }
 
 
-fn get_min_root(g: &Array1<f64>, h: &Array2<f64>, s: &Array1<f64>, p: &Array1<f64>, delta_k: f64) -> Array1<f64> {
+pub fn get_min_root(g: &Array1<f64>, h: &Array2<f64>, s: &Array1<f64>, p: &Array1<f64>, delta_k: f64) -> Array1<f64> {
     let s_square = s.t().dot(s);
     let p_square = p.t().dot(p);
     let delta = 4.*(&s.t().dot(p)-p_square*(&s_square-delta_k.powi(2)));
@@ -145,7 +160,8 @@ fn get_min_root(g: &Array1<f64>, h: &Array2<f64>, s: &Array1<f64>, p: &Array1<f6
     }
 }
 
-fn get_pos_root(s: &Array1<f64>, p: &Array1<f64>, delta_k: f64) -> f64 {
+/// Renvoie la racine positive du problème ``
+pub fn get_pos_root(s: &Array1<f64>, p: &Array1<f64>, delta_k: f64) -> f64 {
     let s_square = s.t().dot(s);
     let p_square = p.t().dot(p);
     let delta = 4.*(&s.t().dot(p)-p_square*(&s_square-delta_k.powi(2)));
@@ -161,7 +177,8 @@ fn get_pos_root(s: &Array1<f64>, p: &Array1<f64>, delta_k: f64) -> f64 {
 }
 
 
-fn conjuge_tronque(gk: &Array1<f64>, hk: &Array2<f64>, delta_k: f64, epsilon: f64) -> Array1<f64> {
+/// Algorithme du gradient conjugé tronqué
+pub fn conjuge_tronque(gk: &Array1<f64>, hk: &Array2<f64>, delta_k: f64, epsilon: f64) -> Array1<f64> {
     let gk_norm = &gk.norm();
     if gk_norm < &epsilon {
         return gk.to_owned();
@@ -202,13 +219,14 @@ fn conjuge_tronque(gk: &Array1<f64>, hk: &Array2<f64>, delta_k: f64, epsilon: f6
     return s;
 }
 
-fn regions_confiance_conjuge_tronque(f: &dyn Fn(&Array1<f64>) -> f64, x0: &Array1<f64>, gradient: &dyn Fn(&Array1<f64>) -> Array1<f64>, hessienne: &dyn Fn(&Array1<f64>) -> Array2<f64>, params: &AlgoParams) -> (Array1<f64>, ExitCondition) {
+/// Régions de confiance avec le conjugé tronqué
+pub fn regions_confiance_conjuge_tronque(f: &dyn Fn(&Array1<f64>) -> f64, x0: &Array1<f64>, gradient: &dyn Fn(&Array1<f64>) -> Array1<f64>, hessienne: &dyn Fn(&Array1<f64>) -> Array2<f64>, params: &AlgoParams) -> (Array1<f64>, ExitCondition) {
     regions_confiance(&conjuge_tronque, f, x0, gradient, hessienne, params)
 }
 
-fn methode_lagrangien_egalite<C>(methode: &C, f: &dyn Fn(&Array1<f64>) -> f64, gradient: &dyn Fn(&Array1<f64>) -> Array1<f64>, hessienne: &dyn Fn(&Array1<f64>) -> Array2<f64>, contraintes: &dyn Fn(&Array1<f64>) -> Array1<f64>, gradient_contraintes: &dyn Fn(&Array1<f64>) -> Array2<f64>, grad_grad_contraintes: &dyn Fn(&Array1<f64>) -> Array3<f64>, x0: &Array1<f64>, lambda_0: &Array1<f64>, eta_0: f64, mu_0: f64, params: &AlgoParams) -> (Array1<f64>, Array1<f64>, f64)
+/// Méthode du lagrangien augmenté dans le cas d'égalité
+pub fn lagrangien_egalite<C>(methode: &C, f: &dyn Fn(&Array1<f64>) -> f64, gradient: &dyn Fn(&Array1<f64>) -> Array1<f64>, hessienne: &dyn Fn(&Array1<f64>) -> Array2<f64>, contraintes: &dyn Fn(&Array1<f64>) -> Array1<f64>, gradient_contraintes: &dyn Fn(&Array1<f64>) -> Array2<f64>, grad_grad_contraintes: &dyn Fn(&Array1<f64>) -> Array3<f64>, x0: &Array1<f64>, lambda_0: &Array1<f64>, eta_0: f64, mu_0: f64, params: &AlgoParams) -> (Array1<f64>, Array1<f64>, f64)
     where C: Fn(&dyn Fn(&Array1<f64>) -> f64, &Array1<f64>, &dyn Fn(&Array1<f64>) -> Array1<f64>, &dyn Fn(&Array1<f64>) -> Array2<f64>, &AlgoParams) -> (Array1<f64>, ExitCondition) {
-    let original_espilon = params.epsilon;
     let mut params = *params;
     let mut lambda_k: Array1<f64> = lambda_0.to_owned();
     let mut epsilon_k = 1./mu_0;
@@ -222,9 +240,9 @@ fn methode_lagrangien_egalite<C>(methode: &C, f: &dyn Fn(&Array1<f64>) -> f64, g
         let CLHessC = |x: &Array1<f64>, beta: &Array1<f64>| {
             let grad_grad_contraintes_x = grad_grad_contraintes(x);
             let (dim0, dim1, dim2) = grad_grad_contraintes_x.dim();
-            let mut res: Array2<f64> = Array2::zeros((dim1, dim2));
-            for i in 0..dim0 {
-                res = res+beta[i]*&grad_grad_contraintes_x.slice(s![i, 1..-1, 1..-1]);
+            let mut res: Array2<f64> = Array2::zeros((dim0, dim1));
+            for i in 0..dim2 {
+                res = res+beta[i]*&grad_grad_contraintes_x.slice(s![.., .., i]);
             }
             res
         };
@@ -241,16 +259,15 @@ fn methode_lagrangien_egalite<C>(methode: &C, f: &dyn Fn(&Array1<f64>) -> f64, g
         };
 
         params.epsilon = epsilon_k;
-        let xk_plus_1 = methode(&Lk, &xk, &GLk, &HLk, &params).0;
+        xk = methode(&Lk, &xk, &GLk, &HLk, &params).0;
 
         if k == params.k_max
-            || (&xk_plus_1-&xk).norm() < original_espilon * (xk.norm()+1e-8)
-            || (f(&xk_plus_1)-f(&xk)).abs() < original_espilon * (f(&xk).abs()+1e-8) {
+            || ((&gradient(&xk)+&gradient_contraintes(&xk).dot(&lambda_k)).norm() < params.epsilon_algo_lagrangien && contraintes(&xk).norm() < params.epsilon_algo_lagrangien) {
             break;
         }
 
 
-        let ncontraintes = contraintes(&xk_plus_1);
+        let ncontraintes = contraintes(&xk);
         if ncontraintes.norm() < eta_k {
             lambda_k = lambda_k + mu_k * ncontraintes;
             epsilon_k = epsilon_k/mu_k;
@@ -314,8 +331,9 @@ mod tests {
 
     const PARAMS: AlgoParams = AlgoParams {
         epsilon: 1e-8,
-        epsilon_algo_regions_confiance: 1e-8,
-        k_max: 5000,
+        epsilon_algo_regions_confiance: 1e-12,
+        epsilon_algo_lagrangien: 1e-6,
+        k_max: 150,
         delta_0: 1.0,
         delta_max: 1e8,
         gamma_1: 0.5,
@@ -445,6 +463,17 @@ mod tests {
 
     #[test]
     fn lagrangien_egalite() {
-
+        let xc11 = array![0., 1., 1.];
+        let xc12 = array![0.25, 1.25, 1.];
+        let res = array![0.5, 1.25, 0.5];
+        let lambda_0_1 = array![0.];
+        let contrainte_1 = |x: &Array1<f64>| array![x[0]+x[2]-1.];
+        let gradient_contrainte_1 = |_: &Array1<f64>| array![[1.], [0.], [1.]];
+        let grad_grad_contrainte_1 = |_: &Array1<f64>| array![[[0.], [0.], [0.]], [[0.], [0.], [0.]], [[0.], [0.], [0.]]];
+        assert!((super::lagrangien_egalite(&super::newton, &f1, &gradient_f1, &hessienne_f1,  &contrainte_1, &gradient_contrainte_1, &grad_grad_contrainte_1, &xc11, &lambda_0_1, 0.1, 5000., &PARAMS).0-&res).norm() < 1e-6);
+        assert!((super::lagrangien_egalite(&super::regions_confiance_conjuge_tronque, &f1, &gradient_f1, &hessienne_f1,  &contrainte_1, &gradient_contrainte_1, &grad_grad_contrainte_1, &xc11, &lambda_0_1, 0.1, 5000., &PARAMS).0-&res).norm() < 1e-6);
+        assert!((super::lagrangien_egalite(&super::regions_confiance_pas_de_cauchy, &f1, &gradient_f1, &hessienne_f1,  &contrainte_1, &gradient_contrainte_1, &grad_grad_contrainte_1, &xc11, &lambda_0_1, 0.1, 5000., &PARAMS).0-&res).norm() < 1e-6);
+        assert!((super::lagrangien_egalite(&super::regions_confiance_pas_de_cauchy, &f1, &gradient_f1, &hessienne_f1,  &contrainte_1, &gradient_contrainte_1, &grad_grad_contrainte_1, &xc12, &lambda_0_1, 0.1, 5000., &PARAMS).0-&res).norm() < 1e-6);
+        assert!((super::lagrangien_egalite(&super::regions_confiance_pas_de_cauchy, &f1, &gradient_f1, &hessienne_f1,  &contrainte_1, &gradient_contrainte_1, &grad_grad_contrainte_1, &xc12, &lambda_0_1, 0.1, 5000., &PARAMS).0-&res).norm() < 1e-6);
     }
 }
