@@ -282,6 +282,13 @@ pub fn lagrangien_egalite<C>(methode: &C, f: &dyn Fn(&Array1<f64>) -> f64, gradi
     (xk, lambda_k, mu_k)
 }
 
+// lagrangien inégalité: considérer le problème
+// | Min(x) f(x)
+// | c(x) <= 0
+// doit être transformé en
+// | Min(x, e) f((x e))
+// | c(x)+e² = 0
+// -> augmenter f/gradient_f/hessienne_f
 
 fn f1(x: &Array1<f64>) -> f64 {
     2.*(x[0]+x[1]+x[2]-3.).powi(2)+(x[0]-x[1]).powi(2)+(x[1]-x[2]).powi(2)
@@ -333,7 +340,7 @@ mod tests {
         epsilon: 1e-8,
         epsilon_algo_regions_confiance: 1e-12,
         epsilon_algo_lagrangien: 1e-6,
-        k_max: 150,
+        k_max: 50,
         delta_0: 1.0,
         delta_max: 1e8,
         gamma_1: 0.5,
@@ -471,9 +478,10 @@ mod tests {
         let gradient_contrainte_1 = |_: &Array1<f64>| array![[1.], [0.], [1.]];
         let grad_grad_contrainte_1 = |_: &Array1<f64>| array![[[0.], [0.], [0.]], [[0.], [0.], [0.]], [[0.], [0.], [0.]]];
         assert!((super::lagrangien_egalite(&super::newton, &f1, &gradient_f1, &hessienne_f1,  &contrainte_1, &gradient_contrainte_1, &grad_grad_contrainte_1, &xc11, &lambda_0_1, 0.1, 5000., &PARAMS).0-&res).norm() < 1e-6);
+        assert!((super::lagrangien_egalite(&super::newton, &f1, &gradient_f1, &hessienne_f1,  &contrainte_1, &gradient_contrainte_1, &grad_grad_contrainte_1, &xc12, &lambda_0_1, 0.1, 5000., &PARAMS).0-&res).norm() < 1e-6);
         assert!((super::lagrangien_egalite(&super::regions_confiance_conjuge_tronque, &f1, &gradient_f1, &hessienne_f1,  &contrainte_1, &gradient_contrainte_1, &grad_grad_contrainte_1, &xc11, &lambda_0_1, 0.1, 5000., &PARAMS).0-&res).norm() < 1e-6);
+        assert!((super::lagrangien_egalite(&super::regions_confiance_conjuge_tronque, &f1, &gradient_f1, &hessienne_f1,  &contrainte_1, &gradient_contrainte_1, &grad_grad_contrainte_1, &xc12, &lambda_0_1, 0.1, 5000., &PARAMS).0-&res).norm() < 1e-6);
         assert!((super::lagrangien_egalite(&super::regions_confiance_pas_de_cauchy, &f1, &gradient_f1, &hessienne_f1,  &contrainte_1, &gradient_contrainte_1, &grad_grad_contrainte_1, &xc11, &lambda_0_1, 0.1, 5000., &PARAMS).0-&res).norm() < 1e-6);
-        assert!((super::lagrangien_egalite(&super::regions_confiance_pas_de_cauchy, &f1, &gradient_f1, &hessienne_f1,  &contrainte_1, &gradient_contrainte_1, &grad_grad_contrainte_1, &xc12, &lambda_0_1, 0.1, 5000., &PARAMS).0-&res).norm() < 1e-6);
         assert!((super::lagrangien_egalite(&super::regions_confiance_pas_de_cauchy, &f1, &gradient_f1, &hessienne_f1,  &contrainte_1, &gradient_contrainte_1, &grad_grad_contrainte_1, &xc12, &lambda_0_1, 0.1, 5000., &PARAMS).0-&res).norm() < 1e-6);
     }
 }
