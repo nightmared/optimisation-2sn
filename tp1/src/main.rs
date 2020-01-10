@@ -290,44 +290,6 @@ pub fn lagrangien_egalite<C>(methode: &C, f: &dyn Fn(&Array1<f64>) -> f64, gradi
 // | c(x)+e² = 0
 // -> augmenter f/gradient_f/hessienne_f
 
-fn f1(x: &Array1<f64>) -> f64 {
-    2.*(x[0]+x[1]+x[2]-3.).powi(2)+(x[0]-x[1]).powi(2)+(x[1]-x[2]).powi(2)
-}
-
-fn gradient_f1(x: &Array1<f64>) -> Array1<f64> {
-    array![
-        4.*(x[0]+x[1]+x[2]-3.) + 2.*(x[0]-x[1]),
-        4.*(x[0]+x[1]+x[2]-3.) - 2.*(x[0]-x[1]) + 2.*(x[1]-x[2]),
-        4.*(x[0]+x[1]+x[2]-3.) - 2.*(x[1]-x[2])
-    ]
-}
-
-fn hessienne_f1(_x: &Array1<f64>) -> Array2<f64> {
-    array![
-        [6., 2., 4.],
-        [2., 8., 2.],
-        [4., 2., 6.]
-    ]
-}
-
-fn f2(x: &Array1<f64>) -> f64 {
-    100.*(x[1]-x[0].powi(2)).powi(2)+(1.-x[0]).powi(2)
-}
-
-fn gradient_f2(x: &Array1<f64>) -> Array1<f64> {
-    array![
-        -400.*x[0]*(x[1]-x[0].powi(2)) - 2.*(1.-x[0]),
-        200.*(x[1]-x[0].powi(2))
-    ]
-}
-
-fn hessienne_f2(x: &Array1<f64>) -> Array2<f64> {
-    array![
-        [1200.*x[0].powi(2)-400.*x[1]+2., -400.*x[0]],//400.*(x[0].powi(2)-2.*x[1])],
-        [-400.*x[0], 200.]
-    ]
-}
-
 fn main() {
 
 }
@@ -339,18 +301,56 @@ mod tests {
     const PARAMS: AlgoParams = AlgoParams {
         epsilon: 1e-8,
         epsilon_algo_regions_confiance: 1e-12,
-        epsilon_algo_lagrangien: 1e-6,
-        k_max: 50,
+        epsilon_algo_lagrangien: 1e-8,
+        k_max: 100,
         delta_0: 1.0,
         delta_max: 1e8,
         gamma_1: 0.5,
         gamma_2: 2.0,
         eta_1: 0.1,
         eta_2: 0.5,
-        tau: 0.75,
+        tau: 1.25,
         alpha: 0.1,
         beta: 0.9
     };
+
+    fn f1(x: &Array1<f64>) -> f64 {
+        2.*(x[0]+x[1]+x[2]-3.).powi(2)+(x[0]-x[1]).powi(2)+(x[1]-x[2]).powi(2)
+    }
+
+    fn gradient_f1(x: &Array1<f64>) -> Array1<f64> {
+        array![
+            4.*(x[0]+x[1]+x[2]-3.) + 2.*(x[0]-x[1]),
+            4.*(x[0]+x[1]+x[2]-3.) - 2.*(x[0]-x[1]) + 2.*(x[1]-x[2]),
+            4.*(x[0]+x[1]+x[2]-3.) - 2.*(x[1]-x[2])
+        ]
+    }
+
+    fn hessienne_f1(_x: &Array1<f64>) -> Array2<f64> {
+        array![
+            [6., 2., 4.],
+            [2., 8., 2.],
+            [4., 2., 6.]
+        ]
+    }
+
+    fn f2(x: &Array1<f64>) -> f64 {
+        100.*(x[1]-x[0].powi(2)).powi(2)+(1.-x[0]).powi(2)
+    }
+
+    fn gradient_f2(x: &Array1<f64>) -> Array1<f64> {
+        array![
+            -400.*x[0]*(x[1]-x[0].powi(2)) - 2.*(1.-x[0]),
+            200.*(x[1]-x[0].powi(2))
+        ]
+    }
+
+    fn hessienne_f2(x: &Array1<f64>) -> Array2<f64> {
+        array![
+            [1200.*x[0].powi(2)-400.*x[1]+2., -400.*x[0]],
+            [-400.*x[0], 200.]
+        ]
+    }
 
     #[test]
     fn newton() {
@@ -483,5 +483,20 @@ mod tests {
         assert!((super::lagrangien_egalite(&super::regions_confiance_conjuge_tronque, &f1, &gradient_f1, &hessienne_f1,  &contrainte_1, &gradient_contrainte_1, &grad_grad_contrainte_1, &xc12, &lambda_0_1, 0.1, 5000., &PARAMS).0-&res).norm() < 1e-6);
         assert!((super::lagrangien_egalite(&super::regions_confiance_pas_de_cauchy, &f1, &gradient_f1, &hessienne_f1,  &contrainte_1, &gradient_contrainte_1, &grad_grad_contrainte_1, &xc11, &lambda_0_1, 0.1, 5000., &PARAMS).0-&res).norm() < 1e-6);
         assert!((super::lagrangien_egalite(&super::regions_confiance_pas_de_cauchy, &f1, &gradient_f1, &hessienne_f1,  &contrainte_1, &gradient_contrainte_1, &grad_grad_contrainte_1, &xc12, &lambda_0_1, 0.1, 5000., &PARAMS).0-&res).norm() < 1e-6);
+
+        let xc21 = array![1., 0.];
+        let xc22 = array![2_f64.sqrt()/2., 3_f64.sqrt()/2.];
+        let res2 = array![0.907234, 0.822755];
+        let lambda_0_2 = array![0.];
+        let contrainte_2 = |x: &Array1<f64>| array![x[0].powi(2)+x[1].powi(2)-1.5];
+        let gradient_contrainte_2 = |x: &Array1<f64>| array![[2.*x[0]], [2.*x[1]]];
+        let grad_grad_contrainte_2 = |_: &Array1<f64>| array![[[2.], [0.]], [[0.], [2.]]];
+        assert!((super::lagrangien_egalite(&super::newton, &f2, &gradient_f2, &hessienne_f2,  &contrainte_2, &gradient_contrainte_2, &grad_grad_contrainte_2, &xc21, &lambda_0_2, 0.1, 5000., &PARAMS).0-&res2).norm() < 1e-6);
+        assert!((super::lagrangien_egalite(&super::newton, &f2, &gradient_f2, &hessienne_f2,  &contrainte_2, &gradient_contrainte_2, &grad_grad_contrainte_2, &xc22, &lambda_0_2, 0.1, 5000., &PARAMS).0-&res2).norm() < 1e-6);
+        assert!((super::lagrangien_egalite(&super::regions_confiance_conjuge_tronque, &f2, &gradient_f2, &hessienne_f2,  &contrainte_2, &gradient_contrainte_2, &grad_grad_contrainte_2, &xc21, &lambda_0_2, 0.1, 500., &PARAMS).0-&res2).norm() < 1e-6);
+        assert!((super::lagrangien_egalite(&super::regions_confiance_conjuge_tronque, &f2, &gradient_f2, &hessienne_f2,  &contrainte_2, &gradient_contrainte_2, &grad_grad_contrainte_2, &xc22, &lambda_0_2, 0.1, 100., &PARAMS).0-&res2).norm() < 1e-6);
+        assert!((super::lagrangien_egalite(&super::regions_confiance_pas_de_cauchy, &f2, &gradient_f2, &hessienne_f2,  &contrainte_2, &gradient_contrainte_2, &grad_grad_contrainte_2, &xc21, &lambda_0_2, 0.1, 5000., &PARAMS).0-&res2).norm() < 1e-6);
+        assert!((super::lagrangien_egalite(&super::regions_confiance_pas_de_cauchy, &f2, &gradient_f2, &hessienne_f2,  &contrainte_2, &gradient_contrainte_2, &grad_grad_contrainte_2, &xc22, &lambda_0_2, 0.1, 5000., &PARAMS).0-&res2).norm() < 1e-6);
+
     }
 }
