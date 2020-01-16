@@ -282,19 +282,69 @@ pub fn lagrangien_egalite<C>(methode: &C, f: &dyn Fn(&Array1<f64>) -> f64, gradi
     (xk, lambda_k, mu_k)
 }
 
-/// Méthode du lagrangien augmenté dans le cas d'égalité
+/// Méthode du lagrangien augmenté dans le cas d'inégalité
+/// Le principe est le suivant: on considére le problème
+/// | Min(x) f(x)
+/// | c(x) <= 0
+/// est transformé en
+/// | Min(x, e) f((x e))
+/// | e <= 0
+/// | c(x)+e² = 0
+/// Pour ce faire, on augmente gradient_f/hessienne_f/contraintes/gradient_contraintes/grad_grad_contraintes
 pub fn lagrangien_inegalite<C>(methode: &C, f: &dyn Fn(&Array1<f64>) -> f64, gradient: &dyn Fn(&Array1<f64>) -> Array1<f64>, hessienne: &dyn Fn(&Array1<f64>) -> Array2<f64>, contraintes: &dyn Fn(&Array1<f64>) -> Array1<f64>, gradient_contraintes: &dyn Fn(&Array1<f64>) -> Array2<f64>, grad_grad_contraintes: &dyn Fn(&Array1<f64>) -> Array3<f64>, x0: &Array1<f64>, lambda_0: &Array1<f64>, eta_0: f64, mu_0: f64, params: &AlgoParams) -> (Array1<f64>, Array1<f64>, f64)
     where C: Fn(&dyn Fn(&Array1<f64>) -> f64, &Array1<f64>, &dyn Fn(&Array1<f64>) -> Array1<f64>, &dyn Fn(&Array1<f64>) -> Array2<f64>, &AlgoParams) -> (Array1<f64>, ExitCondition) {
-    lagrangien_egalite(methode, f, gradient, hessienne, contraintes, gradient_contraintes, grad_grad_contraintes, x0, lambda_0, eta_0, mu_0, params)
-}
+    let dim_e = contraintes(&x0).dim();
+    let mut new_x0: Array1<f64> = Array1::zeros(x0.dim()+dim_e);
+    // copie de x0 dans new_x0
+    new_x0.slice_mut(s![0..x0.dim()]).assign(&x0);
+    let new_gradient_f = |x: &Array1<f64>| {
+        let mut new_gradient_f_back = Array1::zeros(new_x0.dim());
+        new_gradient_f_back.slice_mut(s![0..x0.dim()]).assign(&gradient(x));
+        new_gradient_f_back.slice_mut(s![x0.dim()..]).assign(&x.slice(s![x0.dim()..]));
+        new_gradient_f_back
+    };
+    let new_hessienne_f = |x: &Array1<f64>| {
+        let mut new_hessienne_f_back = Array2::zeros((new_x0.dim(), new_x0.dim()));
+        new_hessienne_f_back.slice_mut(s![0..x0.dim(), 0..x0.dim()]).assign(&hessienne(x));
+        new_hessienne_f_back
+    };
+    let new_contraintes = |x: &Array1<f64>| {
+        let mut contraintes_x = contraintes(&x);
+        for i in 0..dim_e {
+            contraintes_x[i] = contraintes_x[i]+x[x0.dim()+i].powi(2);
+        }
+        contraintes_x
+    };
+    let new_gradient_contraintes = |x: &Array1<f64>| {
+        let mut new_gradient_contraintes_back = Array2::zeros((dim_e, new_x0.dim()));
+        // calcul de la dérivée des contraintes par rapport au x originel
+        new_gradient_contraintes_back
+            .slice_mut(s![.., 0..x0.dim()])
+            .assign(&gradient_contraintes(&x));
+        // ajout de la dérivée par rapport à e
+        for i in 0..dim_e {
+            *new_gradient_contraintes_back.get_mut((i, x0.dim()+i)).unwrap() = 2.*x[x0.dim()+i];
+        }
+        new_gradient_contraintes_back
+    };
+    let new_grad_grad_contraintes = |x: &Array1<f64>| {
+        let mut new_hessienne_contraintes_back = Array3::zeros((dim_e, new_x0.dim(), new_x0.dim()));
+        new_hessienne_contraintes_back
+            .slice_mut(s![.., 0..x0.dim(), 0..x0.dim()])
+            .assign(&grad_grad_contraintes(&x));
+         // ajout de la partie de la hessienne liée à e
+        for i in 0..dim_e {
+            new_hessienne_contraintes_back
+                .slice_mut(s![i, x0.dim().., x0.dim()..])
+                .assign(&(2.*Array2::eye(dim_e)));
+        }
+        new_hessienne_contraintes_back
+    };
 
-// lagrangien inégalité: considérer le problème
-// | Min(x) f(x)
-// | c(x) <= 0
-// doit être transformé en
-// | Min(x, e) f((x e))
-// | c(x)+e² = 0
-// -> augmenter f/gradient_f/hessienne_f
+    let (a, b, c) = lagrangien_egalite(methode, f, &new_gradient_f, &new_hessienne_f, &new_contraintes, &new_gradient_contraintes, &new_grad_grad_contraintes, &new_x0, lambda_0, eta_0, mu_0, params);
+    println!("{:?}", a);
+    (a.slice(s![0..x0.dim()]).to_owned(), b, c)
+}
 
 fn main() {
 
@@ -543,8 +593,8 @@ mod tests {
             [-1., 2.],
             [1., 2.],
             [1., -2.],
-            [1., 0.],
-            [0., 1.]
+            [-1., 0.],
+            [0., -1.]
             ];
         let grad_grad_contrainte_1 = |_: &Array1<f64>|
             array![
@@ -554,6 +604,8 @@ mod tests {
             [[0., 0.], [0., 0.]],
             [[0., 0.], [0., 0.]]
             ];
+        println!("{:?}'", super::lagrangien_inegalite(&super::newton, &f3, &gradient_f3, &hessienne_f3,  &contrainte_1, &gradient_contrainte_1, &grad_grad_contrainte_1, &xc11, &lambda_0_1, 0.1, 5000., &PARAMS).0);
+        println!("{:?}'", super::lagrangien_inegalite(&super::newton, &f3, &gradient_f3, &hessienne_f3,  &contrainte_1, &gradient_contrainte_1, &grad_grad_contrainte_1, &xc11, &lambda_0_1, 0.1, 5000., &PARAMS).0-&res);
         assert!((super::lagrangien_inegalite(&super::newton, &f3, &gradient_f3, &hessienne_f3,  &contrainte_1, &gradient_contrainte_1, &grad_grad_contrainte_1, &xc11, &lambda_0_1, 0.1, 5000., &PARAMS).0-&res).norm() < 1e-6);
         assert!((super::lagrangien_inegalite(&super::regions_confiance_conjuge_tronque, &f3, &gradient_f3, &hessienne_f3,  &contrainte_1, &gradient_contrainte_1, &grad_grad_contrainte_1, &xc11, &lambda_0_1, 0.1, 5000., &PARAMS).0-&res).norm() < 1e-6);
         assert!((super::lagrangien_inegalite(&super::regions_confiance_pas_de_cauchy, &f3, &gradient_f3, &hessienne_f3,  &contrainte_1, &gradient_contrainte_1, &grad_grad_contrainte_1, &xc11, &lambda_0_1, 0.1, 5000., &PARAMS).0-&res).norm() < 1e-6);
