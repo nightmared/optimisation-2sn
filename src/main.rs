@@ -244,7 +244,7 @@ fn get_pos_root(s: &Array1<f64>, p: &Array1<f64>, delta_k: f64) -> f64 {
 /// # Arguments:
 /// * `gk`: gradient de la fonction au point considéré
 /// * `hk`: hessienne de la fonction au point considéré
-/// * `delta_k`: taille de la région sur laquelel apppliquer le pas de cauchy
+/// * `delta_k`: taille de la région sur laquelle apppliquer le pas de cauchy
 /// * `epsilon`: précision cible de la solution (la conditon d'arrêt est `kappa < epsilon`) 
 ///
 /// # Valeur de retour:
@@ -427,15 +427,15 @@ mod tests {
 
     const PARAMS: AlgoParams = AlgoParams {
         epsilon: 1e-8,
-        epsilon_algo_regions_confiance: 1e-12,
-        epsilon_algo_lagrangien: 1e-8,
-        k_max: 100,
-        delta_0: 1.0,
-        delta_max: 1e8,
+        epsilon_algo_regions_confiance: 1e-10,
+        epsilon_algo_lagrangien: 1e-7,
+        k_max: 500,
+        delta_0: 5.0,
+        delta_max: 1e9,
         gamma_1: 0.5,
-        gamma_2: 2.0,
+        gamma_2: 1.5,
         eta_1: 0.1,
-        eta_2: 0.5,
+        eta_2: 0.8,
         tau: 1.25,
         alpha: 0.1,
         beta: 0.9
@@ -563,7 +563,7 @@ mod tests {
 
         //let exemple2_g = array![2., 3.];
         //let exemple2_h = array![[4., 6.], [6., 5.0]];
-        //let res2 = TODO;
+        //let res2 = -0.5/f64::sqrt(13.)*&exemple2_g;;
         //println!("{:?}", (super::conjuge_tronque(&exemple2_g, &exemple2_h, 0.5, 1e-14) - &res2));
         //assert!((super::conjuge_tronque(&exemple2_g, &exemple2_h, 0.5, 1e-14) - &res2).norm() < PARAMS.epsilon);
 
@@ -579,18 +579,21 @@ mod tests {
         let x011 = array![1., 0., 0.];
         let x012 = array![10., 3., -2.2];
         let res = array![1., 1., 1.];
-        assert!((super::newton(&f1, &x011, &gradient_f1, &hessienne_f1, &PARAMS).0 - &res).norm() < 1e-12);
-        assert!((super::newton(&f1, &x012, &gradient_f1, &hessienne_f1, &PARAMS).0 - &res).norm() < 1e-12);
+        assert!((super::regions_confiance_pas_de_cauchy(&f1, &x011, &gradient_f1, &hessienne_f1, &PARAMS).0 - &res).norm() < 1e-6);
+        assert!((super::regions_confiance_pas_de_cauchy(&f1, &x012, &gradient_f1, &hessienne_f1, &PARAMS).0 - &res).norm() < 1e-6);
+
+        let mut params = PARAMS;
+        params.k_max = 2500;
+        params.delta_0 = 50.;
 
         // annexe a2
         let x021 = array![-1.2, 1.];
         let x022 = array![10., 0.];
-        //let x023 = array![0., 1./200.+1e-12];
+        let x023 = array![0., 1./200.+1e-12];
         let res = array![1.0, 1.0];
-        assert!((super::newton(&f2, &x021, &gradient_f2, &hessienne_f2, &PARAMS).0 - &res).norm() < 1e-10);
-        assert!((super::newton(&f2, &x022, &gradient_f2, &hessienne_f2, &PARAMS).0 - &res).norm() < 1e-3);
-        // diverge avec cet algorithme
-        //assert!((super::newton(&f2, &x023, &gradient_f2, &hessienne_f2, &PARAMS).0 - &res).norm() < 1e-3);
+        assert!((super::regions_confiance_pas_de_cauchy(&f2, &x021, &gradient_f2, &hessienne_f2, &params).0 - &res).norm() < 1e-3);
+        assert!((super::regions_confiance_pas_de_cauchy(&f2, &x022, &gradient_f2, &hessienne_f2, &params).0 - &res).norm() < 1.5e-3);
+        assert!((super::regions_confiance_pas_de_cauchy(&f2, &x023, &gradient_f2, &hessienne_f2, &PARAMS).0 - &res).norm() < 2.5e-1);
     }
 
     #[test]
@@ -599,18 +602,17 @@ mod tests {
         let x011 = array![1., 0., 0.];
         let x012 = array![10., 3., -2.2];
         let res = array![1., 1., 1.];
-        assert!((super::newton(&f1, &x011, &gradient_f1, &hessienne_f1, &PARAMS).0 - &res).norm() < 1e-12);
-        assert!((super::newton(&f1, &x012, &gradient_f1, &hessienne_f1, &PARAMS).0 - &res).norm() < 1e-12);
+        assert!((super::regions_confiance_conjuge_tronque(&f1, &x011, &gradient_f1, &hessienne_f1, &PARAMS).0 - &res).norm() < 1e-8);
+        assert!((super::regions_confiance_conjuge_tronque(&f1, &x012, &gradient_f1, &hessienne_f1, &PARAMS).0 - &res).norm() < 1e-8);
 
         // annexe a2
         let x021 = array![-1.2, 1.];
         let x022 = array![10., 0.];
-        //let x023 = array![0., 1./200.+1e-12];
+        let x023 = array![0., 1./200.+1e-12];
         let res = array![1.0, 1.0];
-        assert!((super::newton(&f2, &x021, &gradient_f2, &hessienne_f2, &PARAMS).0 - &res).norm() < 1e-10);
-        assert!((super::newton(&f2, &x022, &gradient_f2, &hessienne_f2, &PARAMS).0 - &res).norm() < 1e-3);
-        // diverge avec cet algorithme
-        //assert!((super::newton(&f2, &x023, &gradient_f2, &hessienne_f2, &PARAMS).0 - &res).norm() < 1e-3);
+        assert!((super::regions_confiance_conjuge_tronque(&f2, &x021, &gradient_f2, &hessienne_f2, &PARAMS).0 - &res).norm() < 1e-4);
+        assert!((super::regions_confiance_conjuge_tronque(&f2, &x022, &gradient_f2, &hessienne_f2, &PARAMS).0 - &res).norm() < 1e-3);
+        assert!((super::regions_confiance_conjuge_tronque(&f2, &x023, &gradient_f2, &hessienne_f2, &PARAMS).0 - &res).norm() < 1e-3);
     }
 
     #[test]
@@ -647,8 +649,8 @@ mod tests {
             ];
         assert!((super::lagrangien_egalite(&super::newton, &f2, &gradient_f2, &hessienne_f2,  &contrainte_2, &gradient_contrainte_2, &grad_grad_contrainte_2, &xc21, &lambda_0_2, 0.1, 5000., &PARAMS).0-&res2).norm() < 1e-6);
         assert!((super::lagrangien_egalite(&super::newton, &f2, &gradient_f2, &hessienne_f2,  &contrainte_2, &gradient_contrainte_2, &grad_grad_contrainte_2, &xc22, &lambda_0_2, 0.1, 5000., &PARAMS).0-&res2).norm() < 1e-6);
-        assert!((super::lagrangien_egalite(&super::regions_confiance_conjuge_tronque, &f2, &gradient_f2, &hessienne_f2,  &contrainte_2, &gradient_contrainte_2, &grad_grad_contrainte_2, &xc21, &lambda_0_2, 0.1, 500., &PARAMS).0-&res2).norm() < 1e-6);
-        assert!((super::lagrangien_egalite(&super::regions_confiance_conjuge_tronque, &f2, &gradient_f2, &hessienne_f2,  &contrainte_2, &gradient_contrainte_2, &grad_grad_contrainte_2, &xc22, &lambda_0_2, 0.1, 100., &PARAMS).0-&res2).norm() < 1e-6);
+        assert!((super::lagrangien_egalite(&super::regions_confiance_conjuge_tronque, &f2, &gradient_f2, &hessienne_f2,  &contrainte_2, &gradient_contrainte_2, &grad_grad_contrainte_2, &xc21, &lambda_0_2, 0.1, 100., &PARAMS).0-&res2).norm() < 1e-5);
+        assert!((super::lagrangien_egalite(&super::regions_confiance_conjuge_tronque, &f2, &gradient_f2, &hessienne_f2,  &contrainte_2, &gradient_contrainte_2, &grad_grad_contrainte_2, &xc22, &lambda_0_2, 0.1, 100., &PARAMS).0-&res2).norm() < 2e-5);
         assert!((super::lagrangien_egalite(&super::regions_confiance_pas_de_cauchy, &f2, &gradient_f2, &hessienne_f2,  &contrainte_2, &gradient_contrainte_2, &grad_grad_contrainte_2, &xc21, &lambda_0_2, 0.1, 5000., &PARAMS).0-&res2).norm() < 1e-6);
         assert!((super::lagrangien_egalite(&super::regions_confiance_pas_de_cauchy, &f2, &gradient_f2, &hessienne_f2,  &contrainte_2, &gradient_contrainte_2, &grad_grad_contrainte_2, &xc22, &lambda_0_2, 0.1, 5000., &PARAMS).0-&res2).norm() < 1e-6);
     }
